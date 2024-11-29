@@ -1,0 +1,513 @@
+#define GLM_ENABLE_EXPERIMENTAL
+#include "gameLayer.h"
+#include <glad/glad.h>
+#include <glm/glm.hpp>
+#include <glm/gtx/transform.hpp>
+#include "platformInput.h"
+#include "imgui.h"
+#include <iostream>
+#include <sstream>
+#include <platformTools.h>
+#include <shader.h>
+#include "mesh.h"
+#include <camera.h>
+#include <imfilebrowser.h>
+#include <model.h>
+#include <physics.h>
+#include <profiler.h>
+
+Shader shader;
+Shader compute;
+GLint computeu_Size;
+GLint computeu_deltaTime;
+
+
+Camera camera;
+
+GLint viewProj;
+GLint color;
+GLint positions;
+GLint size;
+
+
+ImGui::FileBrowser fileBrowser;
+
+Model cubeModel;
+Model ballModel;
+Model cilindruModel;
+
+Simulator simulator;
+
+
+Profiler cpuProfiler;
+
+auto getRandomNumber = [&](float min, float max)
+{
+	return (rand() % 2000 / 2000.f) * (max - min) + min;
+};
+
+
+int currentShaderReadBuffer = 0;
+GLuint ssbo[2];
+
+void uploadDataToGPU()
+{
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[currentShaderReadBuffer]);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, simulator.bodies.size()
+		* sizeof(simulator.bodies[0]) ,simulator.bodies.data(), GL_DYNAMIC_READ);
+
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[!currentShaderReadBuffer]);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, simulator.bodies.size()
+		* sizeof(simulator.bodies[0]), simulator.bodies.data(), GL_DYNAMIC_READ);
+}
+
+void bindDataToGPU() 
+{
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo[currentShaderReadBuffer]);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo[!currentShaderReadBuffer]);
+};
+
+void readDataFromGPU()
+{
+
+
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[!currentShaderReadBuffer]);
+
+	// Ensure GPU writes are complete
+	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+
+	void *mappedData = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+	if (mappedData)
+	{
+		memcpy(simulator.bodies.data(), mappedData, simulator.bodies.size() * sizeof(simulator.bodies[0]));
+
+		// Read buffer data here
+		glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+	}
+	else
+	{
+		//Error reading data
+	}
+
+};
+
+bool initGame()
+{
+
+	glGenBuffers(2, ssbo);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[0]);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[1]);
+
+
+	//float data[] =
+	//{
+	//	0, 1, 0,
+	//	-1, -1, 0,
+	//	1, -1, 0
+	//};
+	//
+	//unsigned short indexData[] = {0,1,2};
+	//
+	//model.loadFromData(data, sizeof(data), indexData, sizeof(indexData));
+
+
+	compute.loadComputeShaderProgramFromFile(RESOURCES_PATH "compute.glsl");
+	computeu_Size = compute.getUniform("u_size");
+	computeu_deltaTime = compute.getUniform("u_deltaTime");
+	
+	shader.loadShaderProgramFromFile(
+		RESOURCES_PATH "shader.vert",
+		RESOURCES_PATH "shader.frag"
+	);
+
+	viewProj = shader.getUniform("viewProj");
+	color = shader.getUniform("color");
+	positions = shader.getUniform("positions");
+	size = shader.getUniform("size");
+
+	camera.position.z = 2;
+
+	fileBrowser.SetTitle("test");
+	fileBrowser.SetTypeFilters({".gltf", ".fbx", ".pbj", ".glb"});
+	//fileBrowser.Open();
+
+	cubeModel.loadFromFile(RESOURCES_PATH "models/cube.obj");
+	ballModel.loadFromFile(RESOURCES_PATH "models/ball.obj");
+	cilindruModel.loadFromFile(RESOURCES_PATH "models/cilindru.obj");
+
+	//for (int i = 0; i < 500; i++)
+	//{
+	//
+	//	simulator.bodies.push_back(createBall(
+	//		glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)}, 
+	//		getRandomNumber(0.2, 0.4) * 2));
+	//
+	//
+	//	simulator.bodies.push_back(createBox(
+	//		glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
+	//		glm::vec3{getRandomNumber(0.2, 1), getRandomNumber(0.2, 1), getRandomNumber(0.2, 1)} * 2.f
+	//		));
+	//
+	//}
+
+	//simulator.bodies.push_back(createCilindru(
+	//	glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
+	//	getRandomNumber(0.2, 0.4) * 2, getRandomNumber(0.2, 0.4) * 2));
+
+	simulator.bodies.push_back(createCilindru(glm::vec3{0,-10,0}, 2, 1));
+	simulator.bodies.push_back(createBall(glm::vec3{0,-5,0}, 1));
+	simulator.bodies.push_back(createCilindru(glm::vec3{0,5,0}, 2, 1));
+	simulator.bodies.push_back(createCilindru(glm::vec3{0,0,0}, 2, 1));
+
+	//simulator.bodies.push_back(createBox(glm::vec3{0,-2,0}, {2,2,2}));
+	//simulator.bodies.push_back(createBox(glm::vec3{0,-7,0}, {2,2,2}));
+
+
+	//simulator.bodies.push_back(createCilindru(glm::vec3{0,-2,0}, 0.5, 1));
+	//simulator.bodies.push_back(createCilindru(glm::vec3{0,7,0}, 0.5, 1));
+
+	//simulator.bodies.push_back(createBall(glm::vec3{}, 0.5));
+	//simulator.bodies.push_back(createBall(glm::vec3{1,5,2}, 0.5));
+	//simulator.bodies.push_back(createBall(glm::vec3{-4, 6, 7}, 0.5));
+	//simulator.bodies.push_back(createBall(glm::vec3{-3, 2, -3}, 0.5));
+
+	uploadDataToGPU();
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+	return true;
+}
+
+
+
+bool gameLogic(float deltaTime)
+{
+#pragma region init stuff
+	int w = 0; int h = 0;
+	w = platform::getFrameBufferSizeX(); //window w
+	h = platform::getFrameBufferSizeY(); //window h
+
+	glEnable(GL_DEPTH_TEST);
+	glDisable(GL_BLEND);
+
+
+	glViewport(0, 0, w, h);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); //clear screen
+
+
+	camera.aspectRatio = (float)w / h;
+
+#pragma endregion
+
+	//compute stuff
+	{
+		bindDataToGPU();
+
+		compute.bind();
+		glUniform1i(computeu_Size, simulator.bodies.size());
+		glUniform1f(computeu_deltaTime, deltaTime);
+
+		glDispatchCompute(simulator.bodies.size(), 1, 1);
+
+	}
+
+#pragma region input
+
+	static auto lastMousePos = platform::getRelMousePosition();
+	auto newMousePos = platform::getRelMousePosition();
+	glm::vec2 mouseDelta = (lastMousePos - newMousePos);
+	mouseDelta *= 0.01;
+	lastMousePos = newMousePos;
+
+	if (platform::isRMouseHeld())
+	{
+
+
+		camera.rotateCamera(mouseDelta);
+
+		glm::vec3 deplasare = {};
+		float speed = deltaTime * 5;
+
+		if (platform::isButtonHeld(platform::Button::A))
+		{
+			deplasare.x -= speed;
+		}
+
+		if (platform::isButtonHeld(platform::Button::D))
+		{
+			deplasare.x += speed;
+		}
+
+		if (platform::isButtonHeld(platform::Button::W))
+		{
+			deplasare.z -= speed;
+		}
+
+		if (platform::isButtonHeld(platform::Button::S))
+		{
+			deplasare.z += speed;
+		}
+
+		if (platform::isButtonHeld(platform::Button::Q))
+		{
+			deplasare.y -= speed;
+		}
+
+		if (platform::isButtonHeld(platform::Button::E))
+		{
+			deplasare.y += speed;
+		}
+
+		camera.moveFps(deplasare);
+	}
+
+
+#pragma endregion
+
+	//fileBrowser.Display();
+	//
+	//if (fileBrowser.HasSelected())
+	//{
+	//	std::cout << fileBrowser.GetSelected();
+	//	fileBrowser.ClearSelected();
+	//}
+
+
+	shader.bind();
+	glEnable(GL_CULL_FACE);
+
+
+	glUniformMatrix4fv(viewProj, 1,
+		0, glm::value_ptr(camera.getViewProjectionMatrix()));
+
+
+	ImGui::Begin("Editor");
+
+	cpuProfiler.displayPlot("CPU simulation");
+
+	if (ImGui::Button("Clear"))
+	{
+		simulator.bodies.clear();
+	}
+
+	int count = 0;
+	if (ImGui::Button("Putine"))
+	{
+		for (int i = 0; i < 5; i++)
+		{
+
+			simulator.bodies.push_back(createBall(
+				glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
+				getRandomNumber(0.2, 0.4) * 2));
+		}
+
+
+		for (int i = 0; i < 5; i++)
+		{
+			simulator.bodies.push_back(createBox(
+				glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
+				glm::vec3{getRandomNumber(0.2, 1), getRandomNumber(0.2, 1), getRandomNumber(0.2, 1)} *2.f
+			));
+
+		}
+
+		for (int i = 0; i < 5; i++)
+		{
+			simulator.bodies.push_back(createCilindru(
+				glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
+				getRandomNumber(0.2, 0.4) * 2, getRandomNumber(0.2, 0.4) * 2));
+		}
+	}
+	if (ImGui::Button("Cub"))
+	{
+		simulator.bodies.push_back(createBox(
+			glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
+			glm::vec3{getRandomNumber(0.2, 1), getRandomNumber(0.2, 1), getRandomNumber(0.2, 1)} *2.f
+		));
+	}
+	if (ImGui::Button("Sfera"))
+	{
+		simulator.bodies.push_back(createBall(
+			glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
+			getRandomNumber(0.2, 0.4) * 2));
+	}
+	if (ImGui::Button("Cilindru"))
+	{
+		simulator.bodies.push_back(createCilindru(
+			glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
+			getRandomNumber(0.2, 0.4) * 2, getRandomNumber(0.2, 0.4) * 2));
+	}
+	if (ImGui::Button("100 sfere 250 cub 500 cilindru"))
+	{
+		count = 1;
+	}
+	if (ImGui::Button("200 sfere 500 cub 1000 cilindru"))
+	{
+		count = 2;
+	}
+	if (ImGui::Button("400 sfere 1000 cub 2000 cilindru"))
+	{
+		count = 4;
+	}
+
+	if (ImGui::Button("Impuls"))
+	{
+		for (auto &b : simulator.bodies)
+		{
+			b.acceleration = {getRandomNumber(-2, 2), getRandomNumber(-2, 2), getRandomNumber(-2, 2) * 2000};
+		}
+	}
+
+	static bool speedup = 0;
+	ImGui::Checkbox("Speedup", &speedup);
+
+	for (int j = 0; j < count; j++)
+	{
+		for (int i = 0; i < 100; i++)
+		{
+
+			simulator.bodies.push_back(createBall(
+				glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
+				getRandomNumber(0.2, 0.4) * 2));
+		}
+
+		for (int i = 0; i < 250; i++)
+		{
+			simulator.bodies.push_back(createBox(
+				glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
+				glm::vec3{getRandomNumber(0.2, 1), getRandomNumber(0.2, 1), getRandomNumber(0.2, 1)} *2.f
+			));
+
+		}
+
+		for (int i = 0; i < 500; i++)
+		{
+			simulator.bodies.push_back(createCilindru(
+				glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
+				getRandomNumber(0.2, 0.4) * 2, getRandomNumber(0.2, 0.4) * 2));
+		}
+	}
+
+
+
+
+	ImGui::End();
+
+
+	ImVec4 colorValue = {0,1,1,1};
+	glUniform4f(color, colorValue.x, colorValue.y, colorValue.z, 1);
+
+	for (auto &m : ballModel.meshes)
+	{
+		glBindVertexArray(m.mesh.vao);
+
+		for (auto &b : simulator.bodies)
+		{
+			if (b.type == TYPE_CIRCLE)
+			{
+				glUniform3f(positions, b.position.x, b.position.y, b.position.z);
+				glUniform3f(size, b.shape.x * 2, b.shape.x * 2, b.shape.x * 2);
+				glDrawElements(GL_TRIANGLES, m.mesh.vertexCount, GL_UNSIGNED_SHORT, 0);
+			}
+		}
+	}
+
+	glUniform4f(color, 1, 1, 0.5, 1);
+	for (auto &m : cilindruModel.meshes)
+	{
+		glBindVertexArray(m.mesh.vao);
+
+		for (auto &b : simulator.bodies)
+		{
+			if (b.type == TYPE_CILINDRU)
+			{
+				glUniform3f(positions, b.position.x, b.position.y, b.position.z);
+				glUniform3f(size, b.shape.x*2, b.shape.y, b.shape.x * 2);
+				glDrawElements(GL_TRIANGLES, m.mesh.vertexCount, GL_UNSIGNED_SHORT, 0);
+			}
+		}
+	}
+
+	glUniform4f(color, 1, 0.5, 1, 1);
+	for (auto &m : cubeModel.meshes)
+	{
+		glBindVertexArray(m.mesh.vao);
+
+		for (auto &b : simulator.bodies)
+		{
+			if (b.type == TYPE_BOX)
+			{
+				glUniform3f(positions, b.position.x, b.position.y, b.position.z);
+				glUniform3f(size, b.shape.x, b.shape.y, b.shape.z);
+				glDrawElements(GL_TRIANGLES, m.mesh.vertexCount, GL_UNSIGNED_SHORT, 0);
+			}
+		}
+	}
+
+
+	for (auto &m : cubeModel.meshes)
+	{
+		glBindVertexArray(m.mesh.vao);
+		glUniform3f(positions, 0, -simulator.boxDimensions.y/2.f - 0.2 ,0);
+		glUniform3f(size, simulator.boxDimensions.x, 0.2, simulator.boxDimensions.z);
+
+		glUniform4f(color, 0.5, 0.5, 0.5, 1);
+
+		glDrawElements(GL_TRIANGLES, m.mesh.vertexCount, GL_UNSIGNED_SHORT, 0);
+	}
+
+
+	glEnable(GL_BLEND);
+	//glDisable(GL_CULL_FACE);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	for (auto &m : cubeModel.meshes)
+	{
+		glBindVertexArray(m.mesh.vao);
+		glUniform3f(positions, 0, 0, 0);
+		glUniform3f(size, simulator.boxDimensions.x, simulator.boxDimensions.y, simulator.boxDimensions.z);
+
+		glUniform4f(color, 0.7, 0.5, 0.5, 0.4);
+
+		glDrawElements(GL_TRIANGLES, m.mesh.vertexCount, GL_UNSIGNED_SHORT, 0);
+	}
+
+	glDisable(GL_BLEND);
+
+		
+	cpuProfiler.startFrame();
+
+	if(0)
+	{
+		simulator.update(deltaTime, cpuProfiler);
+
+		if (speedup)
+		{
+			for (int i = 0; i < 10; i++)
+			{
+				simulator.update(0.1, cpuProfiler);
+			}
+		}
+	}
+
+	cpuProfiler.endFrame();
+
+	//compute stuff
+	{
+		readDataFromGPU();
+		currentShaderReadBuffer = !currentShaderReadBuffer;
+	}
+
+
+
+	return true;
+#pragma endregion
+
+}
+
+
+
+void closeGame()
+{
+
+
+}
