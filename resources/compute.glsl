@@ -130,6 +130,582 @@ void applyDrag(inout Object object)
 	}
 }
 
+void normalizeSafe(inout vec3 v)
+{
+	float l = length(v);
+
+	if (l <= 0.00000001)
+	{
+		v = vec3(1,0,0);
+	}
+	else
+	{
+		v /= l;
+	}
+}
+
+bool AABBvsSphere(inout Object abox, in Object bsphere, out float penetration, out vec3 normal)
+{
+	// Vector from A to B
+	vec3 n = bsphere.position - abox.position;
+
+	// Closest point on A to center of B
+	vec3 closest = n;
+
+	vec3 aboxMax = getMax(abox);
+	vec3 aboxMin = getMin(abox);
+
+	// Calculate half extents along each axis for the AABB
+	float x_extent = (aboxMax.x - aboxMin.x) / 2.0f;
+	float y_extent = (aboxMax.y - aboxMin.y) / 2.0f;
+	float z_extent = (aboxMax.z - aboxMin.z) / 2.0f;
+
+	// Clamp point to edges of the AABB
+	closest.x = clamp(closest.x, -x_extent, x_extent);
+	closest.y = clamp(closest.y, -y_extent, y_extent);
+	closest.z = clamp(closest.z, -z_extent, z_extent);
+
+	bool inside = false;
+
+	// Check if sphere center is inside the AABB
+	if (n == closest)
+	{
+		inside = true;
+
+		// Clamp to closest extent along the axis with the largest component
+		if (abs(n.x) > abs(n.y) && abs(n.x) > abs(n.z))
+		{
+			closest.x = (closest.x > 0) ? x_extent : -x_extent;
+		}
+		else if (abs(n.y) > abs(n.z))
+		{
+			closest.y = (closest.y > 0) ? y_extent : -y_extent;
+		}
+		else
+		{
+			closest.z = (closest.z > 0) ? z_extent : -z_extent;
+		}
+	}
+
+	// Calculate the vector from the closest point on A to the center of B
+	vec3 normal3D = n - closest;
+	float d = dot(normal3D, normal3D);
+	float r = bsphere.shape.r;
+
+	// Early out if the distance to the closest point is greater than the sphere's radius and the sphere is not inside the AABB
+	if (d > r * r && !inside)
+	{
+		return false;
+	}
+
+	// Calculate the actual distance if needed
+	d = sqrt(d);
+
+	// Set the collision normal and penetration depth
+	if (inside)
+	{
+		normal = -normalize(normal3D);
+		penetration = r - d;
+	}
+	else
+	{
+		normal = normalize(normal3D);
+		penetration = r - d;
+	}
+
+	return true;
+}
+
+
+bool CylindervsCylinder(inout Object a, in Object b, out float penetration, out vec3 normal)
+{
+	// Vector from A to B
+	vec3 n = b.position - a.position;
+
+	vec3 aMax = getMax(a);
+	vec3 aMin = getMin(a);
+	vec3 bMax = getMax(b);
+	vec3 bMin = getMin(b);
+
+	// Calculate half extents along each axis for each object
+	float a_extent_x = (aMax.x - aMin.x) / 2.0f;
+	float b_extent_x = (bMax.x - bMin.x) / 2.0f;
+	float a_extent_y = (aMax.y - aMin.y) / 2.0f;
+	float b_extent_y = (bMax.y - bMin.y) / 2.0f;
+	float a_extent_z = (aMax.z - aMin.z) / 2.0f;
+	float b_extent_z = (bMax.z - bMin.z) / 2.0f;
+
+	// Calculate overlaps on each axis
+	float x_overlap = a_extent_x + b_extent_x - abs(n.x);
+	float y_overlap = a_extent_y + b_extent_y - abs(n.y);
+	float z_overlap = a_extent_z + b_extent_z - abs(n.z);
+
+	vec2 distantaXZ = vec2(n.x, n.z);
+
+	float r = a.shape.r + b.shape.r;
+	float rSquared = r * r;
+	float distanceSquared = ((a.position.x - b.position.x) * (a.position.x - b.position.x)
+		+ (a.position.z - b.position.z) * (a.position.z - b.position.z));
+	bool overlapXZ = rSquared > distanceSquared;
+
+
+	// SAT test on x, y, and z axes
+	if (y_overlap > 0 && overlapXZ)
+	{
+		float XZdist = sqrt(distanceSquared);
+		float xzOverlap = r - XZdist;
+
+		// Determine the axis of least penetration
+		if (y_overlap < xzOverlap)
+		{
+			normal = (n.y < 0) ? vec3(0, -1, 0) : vec3(0, 1, 0);
+			penetration = y_overlap;
+		}
+		else
+		{
+
+			if (distantaXZ.x == 0 && distantaXZ.y == 0)
+			{
+				normal = vec3(-1, 0, 0);
+				penetration = r;
+			}
+			else
+			{
+
+
+				distantaXZ /= XZdist; //normalize
+				normal.x = distantaXZ.x;
+				normal.y = 0;
+				normal.z = distantaXZ.y;
+
+				penetration = xzOverlap;
+			}
+		}
+
+		return true;
+	}
+
+	return false;
+
+}
+
+
+//a is cube
+//b is cylinder
+bool AABBvsCylinder(inout Object a, in Object b, out float penetration, out vec3 normal)
+{
+	// Vector from A to B
+	vec3 n = b.position - a.position;
+
+	vec3 aMax = getMax(a);
+	vec3 aMin = getMin(a);
+	vec3 bMax = getMax(b);
+	vec3 bMin = getMin(b);
+
+	// Calculate half extents along each axis for each object
+	float a_extent_x = (aMax.x - aMin.x) / 2.0f;
+	float b_extent_x = (bMax.x - bMin.x) / 2.0f;
+	float a_extent_y = (aMax.y - aMin.y) / 2.0f;
+	float b_extent_y = (bMax.y - bMin.y) / 2.0f;
+	float a_extent_z = (aMax.z - aMin.z) / 2.0f;
+	float b_extent_z = (bMax.z - bMin.z) / 2.0f;
+
+	// Calculate overlaps on each axis
+	float x_overlap = a_extent_x + b_extent_x - abs(n.x);
+	float y_overlap = a_extent_y + b_extent_y - abs(n.y);
+	float z_overlap = a_extent_z + b_extent_z - abs(n.z);
+
+
+	// Closest point on A to center of B
+	vec3 closest = n;
+
+	// Calculate half extents along each axis for the AABB
+	float x_extent = (aMax.x - aMin.x) / 2.0f;
+	float y_extent = (aMax.y - aMin.y) / 2.0f;
+	float z_extent = (aMax.z - aMin.z) / 2.0f;
+
+	// Clamp point to edges of the AABB
+	closest.x = clamp(closest.x, -x_extent, x_extent);
+	closest.y = clamp(closest.y, -y_extent, y_extent);
+	closest.z = clamp(closest.z, -z_extent, z_extent);
+
+	bool inside = false;
+
+	// Check if sphere center is inside the AABB
+	if (n == closest)
+	{
+		inside = true;
+
+		// Clamp to closest extent along the axis with the largest component
+		if (abs(n.x) > abs(n.y) && abs(n.x) > abs(n.z))
+		{
+			closest.x = (closest.x > 0) ? x_extent : -x_extent;
+		}
+		else if (abs(n.y) > abs(n.z))
+		{
+			closest.y = (closest.y > 0) ? y_extent : -y_extent;
+		}
+		else
+		{
+			closest.z = (closest.z > 0) ? z_extent : -z_extent;
+		}
+	}
+
+	vec3 closestWorldPos = closest + a.position;
+
+
+	float distantaClosestPoint = distance(vec3(closestWorldPos.x, 0.f, closestWorldPos.z), vec3(b.position.x, 0.f, b.position.z));
+	float overlapXZ = b.shape.x - distantaClosestPoint;
+
+	// SAT test on x, y, and z axes
+	if (inside || (y_overlap > 0 && overlapXZ > 0))
+	{
+
+		// Determine the axis of least penetration
+		if (y_overlap < overlapXZ)
+		{
+			normal = (n.y < 0) ? vec3(0, -1, 0) : vec3(0, 1, 0);
+			penetration = y_overlap;
+		}
+		else
+		{
+			//cerc patrat
+
+			// Calculate the vector from the closest point on A to the center of B
+			vec3 normal3D = n - closest; normal3D.y = 0;
+			float d = dot(normal3D, normal3D);
+			float r = b.shape.r;
+
+			if (normal3D.x == 0 && normal3D.z == 0)
+			{
+				normal = -vec3(1,0,0);
+				penetration = r;
+				return true;
+			}
+
+			d = sqrt(d);
+
+			// Set the collision normal and penetration depth
+			if (inside)
+			{
+				normal = -normalize(normal3D);
+				penetration = r - d;
+			}
+			else
+			{
+				normal = normalize(normal3D);
+				penetration = r - d;
+			}
+		}
+
+		return true;
+	}
+
+	return false;
+
+}
+
+bool AABBvsAABB(inout Object a, in Object b, out float penetration, out vec3 normal)
+{
+	// Vector from A to B
+	vec3 n = b.position - a.position;
+
+	vec3 aMax = getMax(a);
+	vec3 aMin = getMin(a);
+	vec3 bMax = getMax(b);
+	vec3 bMin = getMin(b);
+
+	// Calculate half extents along each axis for each object
+	float a_extent_x = (aMax.x - aMin.x) / 2.0f;
+	float b_extent_x = (bMax.x - bMin.x) / 2.0f;
+	float a_extent_y = (aMax.y - aMin.y) / 2.0f;
+	float b_extent_y = (bMax.y - bMin.y) / 2.0f;
+	float a_extent_z = (aMax.z - aMin.z) / 2.0f;
+	float b_extent_z = (bMax.z - bMin.z) / 2.0f;
+
+	// Calculate overlaps on each axis
+	float x_overlap = a_extent_x + b_extent_x - abs(n.x);
+	float y_overlap = a_extent_y + b_extent_y - abs(n.y);
+	float z_overlap = a_extent_z + b_extent_z - abs(n.z);
+
+	// SAT test on x, y, and z axes
+	if (x_overlap > 0 && y_overlap > 0 && z_overlap > 0)
+	{
+		// Determine the axis of least penetration
+		if (x_overlap < y_overlap && x_overlap < z_overlap)
+		{
+			normal = (n.x < 0) ? vec3(-1, 0, 0) : vec3(1, 0, 0);
+			penetration = x_overlap;
+		}
+		else if (y_overlap < z_overlap)
+		{
+			normal = (n.y < 0) ? vec3(0, -1, 0) : vec3(0, 1, 0);
+			penetration = y_overlap;
+		}
+		else
+		{
+			normal = (n.z < 0) ? vec3(0, 0, -1) : vec3(0, 0, 1);
+			penetration = z_overlap;
+		}
+		return true;
+	}
+
+	return false;
+}
+
+bool CirclevsCircle(inout Object a, in Object b, out float penetration, out vec3 normal)
+{
+
+	float r = a.shape.r + b.shape.r;
+	float rSquared = r * r;
+	float distanceSquared = ((a.position.x - b.position.x) * (a.position.x - b.position.x)
+		+ (a.position.y - b.position.y) * (a.position.y - b.position.y)
+		+ (a.position.z - b.position.z) * (a.position.z - b.position.z));
+
+	bool rez = rSquared > distanceSquared;
+
+	if (rez)
+	{
+		normal = b.position - a.position;
+		normalizeSafe(normal);
+		penetration = r - sqrt(distanceSquared);
+	}
+
+	return rez;
+}
+
+
+//a is sphere
+//b is cylinder
+bool SpherevsCylinder(inout Object a, in Object b, out float penetration, out vec3 normal)
+{
+	// Vector from A to B
+	vec3 n = b.position - a.position;
+
+	vec3 aMax = getMax(a);
+	vec3 aMin = getMin(a);
+	vec3 bMax = getMax(b);
+	vec3 bMin = getMin(b);
+
+	// Calculate half extents along each axis for each object
+	float a_extent_x = (aMax.x - aMin.x) / 2.0f;
+	float b_extent_x = (bMax.x - bMin.x) / 2.0f;
+	float a_extent_y = (aMax.y - aMin.y) / 2.0f;
+	float b_extent_y = (bMax.y - bMin.y) / 2.0f;
+	float a_extent_z = (aMax.z - aMin.z) / 2.0f;
+	float b_extent_z = (bMax.z - bMin.z) / 2.0f;
+
+	// Calculate overlaps on each axis
+	//float x_overlap = a_extent_x + b_extent_x - abs(n.x);
+	//float y_overlap = a_extent_y + b_extent_y - abs(n.y);
+	//float z_overlap = a_extent_z + b_extent_z - abs(n.z);
+
+	float y_overlap = 0;
+	bool inside = false;
+
+	// Closest point on B to center of A sphere
+	vec3 closest = -n;
+	{
+
+		// Calculate half extents along each axis for the AABB
+		float x_extent = (bMax.x - bMin.x) / 2.0f;
+		float y_extent = (bMax.y - bMin.y) / 2.0f;
+		float z_extent = (bMax.z - bMin.z) / 2.0f;
+
+		// Clamp point to edges of the AABB
+		closest.x = clamp(closest.x, -x_extent, x_extent);
+		closest.y = clamp(closest.y, -y_extent, y_extent);
+		closest.z = clamp(closest.z, -z_extent, z_extent);
+
+
+		// Check if sphere center is inside the AABB
+		if (n == closest)
+		{
+			inside = true;
+
+			// Clamp to closest extent along the axis with the largest component
+			if (abs(n.x) > abs(n.y) && abs(n.x) > abs(n.z))
+			{
+				closest.x = (closest.x > 0) ? x_extent : -x_extent;
+			}
+			else if (abs(n.y) > abs(n.z))
+			{
+				closest.y = (closest.y > 0) ? y_extent : -y_extent;
+			}
+			else
+			{
+				closest.z = (closest.z > 0) ? z_extent : -z_extent;
+			}
+		}
+
+		vec3 closestWorldPos = closest + b.position;
+
+		y_overlap = a.shape.x - abs(a.position.y - closestWorldPos.y);
+	}
+
+	float overlapXZ = 0;
+	float r = a.shape.r + b.shape.r;
+	float distanceSquared = 0;
+	{
+		vec2 distantaXZ = vec2(n.x, n.z);
+		float rSquared = r * r;
+		float distanceSquared = ((a.position.x - b.position.x) * (a.position.x - b.position.x)
+			+ (a.position.z - b.position.z) * (a.position.z - b.position.z));
+		float XZdist = sqrt(distanceSquared);
+		overlapXZ = r - XZdist;
+	}
+
+
+	// SAT test on x, y, and z axes
+	if (inside || (y_overlap > 0 && overlapXZ > 0))
+	{
+
+		// Determine the axis of least penetration
+		if (y_overlap < overlapXZ)
+		{
+			normal = (n.y < 0) ? vec3(0, -1, 0) : vec3(0, 1, 0);
+			penetration = y_overlap;
+
+			//cerc patrat
+
+			//// Calculate the vector from the closest point on A to the center of B
+			//vec3 normal3D = a.position - (b.position + closest);
+			//float d = dot(normal3D, normal3D);
+			//float r = a.shape.r;
+			//
+			//if (normal3D.x == 0 && normal3D.z == 0)
+			//{
+			//	normal = -vec3({1,0,0});
+			//	penetration = r;
+			//	return true;
+			//}
+			//
+			//d = sqrt(d);
+			//
+			//// Set the collision normal and penetration depth
+			//if (inside)
+			//{
+			//	normal = -normalize(normal3D);
+			//	penetration = r - d;
+			//}
+			//else
+			//{
+			//	normal = normalize(normal3D);
+			//	penetration = r - d;
+			//}
+		}
+		else
+		{
+			//cerc cerc pe XZ
+			normal = b.position - a.position;
+			normal.y = 0;
+			normalizeSafe(normal);
+			penetration = overlapXZ;
+
+		}
+
+		return true;
+	}
+
+	return false;
+
+}
+
+void positionalCorrection(inout Object A, in Object B, vec3 n,
+	float penetrationDepth, float aInverseMass, float bInverseMass)
+{
+	const float percent = 0.2; // usually 20% to 80%
+	const float slop = 0.01; // usually 0.01 to 0.1 
+
+	vec3 correction = (max(penetrationDepth - slop, 0.0f) / (aInverseMass + bInverseMass)) * percent * n;
+
+	A.position -= aInverseMass * correction;
+	//B.position += bInverseMass * correction;
+};
+
+
+float pythagoreanSolve(float fA, float fB)
+{
+	return sqrt(fA * fA + fB * fB);
+}
+
+void applyFriction(inout Object A, in Object B, vec3 tangent, vec3 rv,
+	float aInverseMass, float bInverseMass, float j)
+{
+	// Solve for magnitude to apply along the friction vector
+	float jt = -dot(rv, tangent);
+	jt = jt / (aInverseMass + bInverseMass);
+
+	// PythagoreanSolve = A^2 + B^2 = C^2, solving for C given A and B
+	// Use to approximate mu given friction coefficients of each body
+	float mu = pythagoreanSolve(A.staticFriction, B.staticFriction);
+
+	// Clamp magnitude of friction and create impulse vector
+	//(Coulomb's Law) Ff<=Fn
+	vec3 frictionImpulse = vec3(0,0,0);
+	if (abs(jt) < j * mu)
+	{
+		frictionImpulse = jt * tangent;
+	}
+	else
+	{
+		float dynamicFriction = pythagoreanSolve(A.dynamicFriction, B.dynamicFriction);
+		frictionImpulse = -j * tangent * dynamicFriction;
+	}
+
+	// Apply
+	A.velocity -= (aInverseMass)*frictionImpulse;
+	B.velocity += (bInverseMass)*frictionImpulse;
+
+};
+
+//
+const float INFINITY = uintBitsToFloat(0x7F800000);
+
+void impulseResolution(inout Object A, in Object B, vec3 normal,
+	float velAlongNormal, float penetrationDepth)
+{
+
+	//calculate elasticity
+	float e = min(A.bouncyness, B.bouncyness);
+	//float e = 0.9;
+
+	float massInverseA = 1.f / A.mass;
+	float massInverseB = 1.f / B.mass;
+
+	if (A.mass == 0 || A.mass == INFINITY) { massInverseA = 0; }
+	if (B.mass == 0 || B.mass == INFINITY) { massInverseB = 0; }
+
+	// Calculate impulse scalar
+	float j = -(1.f + e) * velAlongNormal;
+	j /= massInverseA + massInverseB;
+
+	// Apply impulse
+	vec3 impulse = j * normal;
+	A.velocity -= massInverseA * impulse;
+	B.velocity += massInverseB * impulse;
+
+	positionalCorrection(A, B, normal, penetrationDepth, massInverseA, massInverseB);
+
+	{
+
+		// Re-calculate relative velocity after normal impulse
+		// is applied (impulse from first article, this code comes
+		// directly thereafter in the same resolve function)
+
+		vec3 rv = B.velocity - A.velocity;
+
+		// Solve for the tangent vector
+		vec3 tangent = rv - dot(rv, normal) * normal;
+
+		normalizeSafe(tangent);
+
+		applyFriction(A, B, tangent, rv, massInverseA, massInverseB, j);
+	}
+};
+
+
+
 vec3 boxDimensions = vec3(20, 20, 20);
 
 void main() 
@@ -144,10 +720,172 @@ void main()
 	//drag
 	applyDrag(bodies[i]);
 
-
 	//colisions
+	for (int j = 0; j < u_size; j++)
+	{
+
+		if (i == j) { continue; }
+
+		//auto &A = bodies[i];
+		//auto &B = readBodies[j];
+
+		if (bodies[i].type == TYPE_CIRCLE &&
+			readBodies[j].type == TYPE_CIRCLE
+			)
+		{
+			vec3 normal = vec3(0,0,0);
+			float penetration = 0;
+
+			if (CirclevsCircle(
+				bodies[i], readBodies[j],
+				penetration, normal))
+			{
+				vec3 relativeVelocity = readBodies[j].velocity - bodies[i].velocity;
+				float velAlongNormal = dot(relativeVelocity, normal);
+
+				// Do not resolve if velocities are separating
+				if (velAlongNormal > 0)
+				{
+
+				}
+				else
+				{
+					impulseResolution(bodies[i], readBodies[j], normal, velAlongNormal, penetration);
+				}
+			}
+
+		}
+		else
+			if (bodies[i].type == TYPE_BOX &&
+				readBodies[j].type == TYPE_BOX
+				)
+			{
+				vec3 normal = vec3(0);
+				float penetration = 0;
+
+				if (AABBvsAABB(
+					bodies[i], readBodies[j],
+					penetration, normal))
+				{
+					vec3 relativeVelocity = readBodies[j].velocity - bodies[i].velocity;
+					float velAlongNormal = dot(relativeVelocity, normal);
+
+					// Do not resolve if velocities are separating
+					if (velAlongNormal > 0)
+					{
+
+					}
+					else
+					{
+						impulseResolution(bodies[i], readBodies[j], normal, velAlongNormal, penetration);
+					}
+				}
+
+			}
+			else
+				if (bodies[i].type == TYPE_BOX &&
+					readBodies[j].type == TYPE_CIRCLE
+					)
+				{
+
+					vec3 normal = vec3(0,0,0);
+					float penetration = 0;
+
+					if (AABBvsSphere(
+						bodies[i], readBodies[j],
+						penetration, normal))
+					{
+						vec3 relativeVelocity = readBodies[j].velocity - bodies[i].velocity;
+						float velAlongNormal = dot(relativeVelocity, normal);
+
+						// Do not resolve if velocities are separating
+						if (velAlongNormal > 0)
+						{
+
+						}
+						else
+						{
+							impulseResolution(bodies[i], readBodies[j], normal, velAlongNormal, penetration);
+						}
+					}
+				}
+				else
+					if (bodies[i].type == TYPE_CILINDRU &&
+						readBodies[j].type == TYPE_CILINDRU
+						)
+					{
+
+						vec3 normal = vec3(0,0,0);
+						float penetration = 0;
+
+						if (CylindervsCylinder(
+							bodies[i], readBodies[j],
+							penetration, normal))
+						{
+							vec3 relativeVelocity = readBodies[j].velocity - bodies[i].velocity;
+							float velAlongNormal = dot(relativeVelocity, normal);
+
+							// Do not resolve if velocities are separating
+							if (velAlongNormal > 0)
+							{
+
+							}
+							else
+							{
+								impulseResolution(bodies[i], readBodies[j], normal, velAlongNormal, penetration);
+							}
+						}
+					}
+					else if (bodies[i].type == TYPE_BOX && readBodies[j].type == TYPE_CILINDRU)
+					{
+						vec3 normal = vec3(0,0,0);
+						float penetration = 0;
+
+						if (AABBvsCylinder(
+							bodies[i], readBodies[j],
+							penetration, normal))
+						{
+							vec3 relativeVelocity = readBodies[j].velocity - bodies[i].velocity;
+							float velAlongNormal = dot(relativeVelocity, normal);
+
+							// Do not resolve if velocities are separating
+							if (velAlongNormal > 0)
+							{
+
+							}
+							else
+							{
+								impulseResolution(bodies[i], readBodies[j], normal, velAlongNormal, penetration);
+							}
+						}
+					}
+					else if (bodies[i].type == TYPE_CIRCLE && readBodies[j].type == TYPE_CILINDRU)
+					{
+						vec3 normal = vec3(0, 0, 0);
+						float penetration = 0;
+
+						if (SpherevsCylinder(
+							bodies[i], readBodies[j],
+							penetration, normal))
+						{
+							vec3 relativeVelocity = readBodies[j].velocity - bodies[i].velocity;
+							float velAlongNormal = dot(relativeVelocity, normal);
+
+							// Do not resolve if velocities are separating
+							if (velAlongNormal > 0)
+							{
+
+							}
+							else
+							{
+								impulseResolution(bodies[i], readBodies[j], normal, velAlongNormal, penetration);
+							}
+						}
+					}
 
 
+
+	}
 	
 	//compute euler integration
 	updateForces(bodies[i]);
