@@ -16,6 +16,13 @@
 #include <physics.h>
 #include <profiler.h>
 
+#define GPU_ENGINE 1
+extern "C"
+{
+	__declspec(dllexport) unsigned long NvOptimusEnablement = GPU_ENGINE;
+	__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = GPU_ENGINE;
+}
+
 Shader shader;
 Shader compute;
 GLint computeu_Size;
@@ -40,6 +47,7 @@ Simulator simulator;
 
 
 Profiler cpuProfiler;
+Profiler gpuProfiler;
 
 auto getRandomNumber = [&](float min, float max)
 {
@@ -98,7 +106,7 @@ bool initGame()
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[0]);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[1]);
 
-
+	gpuProfiler.initGPUProfiler();
 	//float data[] =
 	//{
 	//	0, 1, 0,
@@ -178,6 +186,7 @@ bool initGame()
 }
 
 
+bool onGPU = 1;
 
 bool gameLogic(float deltaTime)
 {
@@ -199,6 +208,9 @@ bool gameLogic(float deltaTime)
 #pragma endregion
 
 	//compute stuff
+	gpuProfiler.startFrame();
+	gpuProfiler.startSubProfile("compute work");
+	if(onGPU)
 	{
 		bindDataToGPU();
 
@@ -209,6 +221,9 @@ bool gameLogic(float deltaTime)
 		glDispatchCompute(simulator.bodies.size(), 1, 1);
 
 	}
+	gpuProfiler.endSubProfile("compute work");
+	gpuProfiler.endFrame();
+
 
 #pragma region input
 
@@ -284,9 +299,12 @@ bool gameLogic(float deltaTime)
 
 	cpuProfiler.displayPlot("CPU simulation");
 
+	gpuProfiler.displayPlot("GPU simulation");
+
 	if (ImGui::Button("Clear"))
 	{
 		simulator.bodies.clear();
+		uploadDataToGPU();
 	}
 
 	int count = 0;
@@ -316,6 +334,9 @@ bool gameLogic(float deltaTime)
 				glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
 				getRandomNumber(0.2, 0.4) * 2, getRandomNumber(0.2, 0.4) * 2));
 		}
+		
+		uploadDataToGPU();
+
 	}
 	if (ImGui::Button("Cub"))
 	{
@@ -323,18 +344,24 @@ bool gameLogic(float deltaTime)
 			glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
 			glm::vec3{getRandomNumber(0.2, 1), getRandomNumber(0.2, 1), getRandomNumber(0.2, 1)} *2.f
 		));
+		uploadDataToGPU();
+
 	}
 	if (ImGui::Button("Sfera"))
 	{
 		simulator.bodies.push_back(createBall(
 			glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
 			getRandomNumber(0.2, 0.4) * 2));
+		uploadDataToGPU();
+
 	}
 	if (ImGui::Button("Cilindru"))
 	{
 		simulator.bodies.push_back(createCilindru(
 			glm::vec3{getRandomNumber(-1, 1),getRandomNumber(-10, 10),getRandomNumber(-1, 1)},
 			getRandomNumber(0.2, 0.4) * 2, getRandomNumber(0.2, 0.4) * 2));
+		uploadDataToGPU();
+
 	}
 	if (ImGui::Button("100 sfere 250 cub 500 cilindru"))
 	{
@@ -353,12 +380,15 @@ bool gameLogic(float deltaTime)
 	{
 		for (auto &b : simulator.bodies)
 		{
-			b.acceleration = {getRandomNumber(-2, 2), getRandomNumber(-2, 2), getRandomNumber(-2, 2) * 2000};
+			b.acceleration += glm::vec3{getRandomNumber(-2, 2), getRandomNumber(-2, 2), getRandomNumber(-2, 2) * 2000};
 		}
+		uploadDataToGPU();
 	}
 
 	static bool speedup = 0;
 	ImGui::Checkbox("Speedup", &speedup);
+
+	ImGui::Checkbox("On GPU", &onGPU);
 
 	for (int j = 0; j < count; j++)
 	{
@@ -386,8 +416,10 @@ bool gameLogic(float deltaTime)
 				getRandomNumber(0.2, 0.4) * 2, getRandomNumber(0.2, 0.4) * 2));
 		}
 	}
-
-
+	if (count)
+	{
+		uploadDataToGPU();
+	}
 
 
 	ImGui::End();
@@ -476,7 +508,7 @@ bool gameLogic(float deltaTime)
 		
 	cpuProfiler.startFrame();
 
-	if(0)
+	if(!onGPU)
 	{
 		simulator.update(deltaTime, cpuProfiler);
 
@@ -492,6 +524,7 @@ bool gameLogic(float deltaTime)
 	cpuProfiler.endFrame();
 
 	//compute stuff
+	if(onGPU)
 	{
 		readDataFromGPU();
 		currentShaderReadBuffer = !currentShaderReadBuffer;

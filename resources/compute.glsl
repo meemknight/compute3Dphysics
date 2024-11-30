@@ -36,13 +36,13 @@ struct Object
 	float padding5[3];   // ensure 16-byte alignment
 };
 
-readonly restrict layout(std430, binding = 0) buffer u_readBodies
+readonly restrict layout(std430, binding = 0) coherent buffer u_readBodies
 {
 	Object readBodies[];
 };
 
 //bodies is basically write bodies
-restrict layout(std430, binding = 1) buffer u_writeBodies
+restrict layout(std430, binding = 1) coherent buffer u_writeBodies
 {
 	Object bodies[];
 };
@@ -144,8 +144,11 @@ void normalizeSafe(inout vec3 v)
 	}
 }
 
-bool AABBvsSphere(inout Object abox, in Object bsphere, out float penetration, out vec3 normal)
+bool AABBvsSphere(inout Object abox, int indexB, out float penetration, out vec3 normal)
 {
+
+	Object bsphere = readBodies[indexB];
+
 	// Vector from A to B
 	vec3 n = bsphere.position - abox.position;
 
@@ -217,8 +220,11 @@ bool AABBvsSphere(inout Object abox, in Object bsphere, out float penetration, o
 }
 
 
-bool CylindervsCylinder(inout Object a, in Object b, out float penetration, out vec3 normal)
+bool CylindervsCylinder(inout Object a, int indexB, out float penetration, out vec3 normal)
 {
+
+	Object b = readBodies[indexB];
+
 	// Vector from A to B
 	vec3 n = b.position - a.position;
 
@@ -292,8 +298,10 @@ bool CylindervsCylinder(inout Object a, in Object b, out float penetration, out 
 
 //a is cube
 //b is cylinder
-bool AABBvsCylinder(inout Object a, in Object b, out float penetration, out vec3 normal)
+bool AABBvsCylinder(inout Object a, int indexB, out float penetration, out vec3 normal)
 {
+	Object b = readBodies[indexB];
+
 	// Vector from A to B
 	vec3 n = b.position - a.position;
 
@@ -405,8 +413,11 @@ bool AABBvsCylinder(inout Object a, in Object b, out float penetration, out vec3
 
 }
 
-bool AABBvsAABB(inout Object a, in Object b, out float penetration, out vec3 normal)
+bool AABBvsAABB(inout Object a, int indexB , out float penetration, out vec3 normal)
 {
+
+	Object b = readBodies[indexB];
+
 	// Vector from A to B
 	vec3 n = b.position - a.position;
 
@@ -453,8 +464,10 @@ bool AABBvsAABB(inout Object a, in Object b, out float penetration, out vec3 nor
 	return false;
 }
 
-bool CirclevsCircle(inout Object a, in Object b, out float penetration, out vec3 normal)
+bool CirclevsCircle(inout Object a, int indexB, out float penetration, out vec3 normal)
 {
+
+	Object b = readBodies[indexB];
 
 	float r = a.shape.r + b.shape.r;
 	float rSquared = r * r;
@@ -477,8 +490,10 @@ bool CirclevsCircle(inout Object a, in Object b, out float penetration, out vec3
 
 //a is sphere
 //b is cylinder
-bool SpherevsCylinder(inout Object a, in Object b, out float penetration, out vec3 normal)
+bool SpherevsCylinder(inout Object a, int indexB, out float penetration, out vec3 normal)
 {
+	Object b = readBodies[indexB];
+
 	// Vector from A to B
 	vec3 n = b.position - a.position;
 
@@ -611,7 +626,7 @@ bool SpherevsCylinder(inout Object a, in Object b, out float penetration, out ve
 
 }
 
-void positionalCorrection(inout Object A, in Object B, vec3 n,
+void positionalCorrection(inout Object A, Object B, vec3 n,
 	float penetrationDepth, float aInverseMass, float bInverseMass)
 {
 	const float percent = 0.2; // usually 20% to 80%
@@ -629,7 +644,7 @@ float pythagoreanSolve(float fA, float fB)
 	return sqrt(fA * fA + fB * fB);
 }
 
-void applyFriction(inout Object A, in Object B, vec3 tangent, vec3 rv,
+void applyFriction(inout Object A, Object B, vec3 tangent, vec3 rv,
 	float aInverseMass, float bInverseMass, float j)
 {
 	// Solve for magnitude to apply along the friction vector
@@ -655,16 +670,17 @@ void applyFriction(inout Object A, in Object B, vec3 tangent, vec3 rv,
 
 	// Apply
 	A.velocity -= (aInverseMass)*frictionImpulse;
-	B.velocity += (bInverseMass)*frictionImpulse;
+	//B.velocity += (bInverseMass)*frictionImpulse;
 
 };
 
 //
 const float INFINITY = uintBitsToFloat(0x7F800000);
 
-void impulseResolution(inout Object A, in Object B, vec3 normal,
+void impulseResolution(inout Object A, int indexB, vec3 normal,
 	float velAlongNormal, float penetrationDepth)
 {
+	Object B = readBodies[indexB];
 
 	//calculate elasticity
 	float e = min(A.bouncyness, B.bouncyness);
@@ -683,7 +699,7 @@ void impulseResolution(inout Object A, in Object B, vec3 normal,
 	// Apply impulse
 	vec3 impulse = j * normal;
 	A.velocity -= massInverseA * impulse;
-	B.velocity += massInverseB * impulse;
+	//B.velocity += massInverseB * impulse;
 
 	positionalCorrection(A, B, normal, penetrationDepth, massInverseA, massInverseB);
 
@@ -715,7 +731,7 @@ void main()
 	bodies[i] = readBodies[i];
 
 	//gravity
-	bodies[i].acceleration = vec3(0, -9.81, 0);
+	bodies[i].acceleration += vec3(0, -9.81, 0);
 
 	//drag
 	applyDrag(bodies[i]);
@@ -737,7 +753,7 @@ void main()
 			float penetration = 0;
 
 			if (CirclevsCircle(
-				bodies[i], readBodies[j],
+				bodies[i], j,
 				penetration, normal))
 			{
 				vec3 relativeVelocity = readBodies[j].velocity - bodies[i].velocity;
@@ -750,7 +766,7 @@ void main()
 				}
 				else
 				{
-					impulseResolution(bodies[i], readBodies[j], normal, velAlongNormal, penetration);
+					impulseResolution(bodies[i], j, normal, velAlongNormal, penetration);
 				}
 			}
 
@@ -764,7 +780,7 @@ void main()
 				float penetration = 0;
 
 				if (AABBvsAABB(
-					bodies[i], readBodies[j],
+					bodies[i], j,
 					penetration, normal))
 				{
 					vec3 relativeVelocity = readBodies[j].velocity - bodies[i].velocity;
@@ -777,7 +793,7 @@ void main()
 					}
 					else
 					{
-						impulseResolution(bodies[i], readBodies[j], normal, velAlongNormal, penetration);
+						impulseResolution(bodies[i], j, normal, velAlongNormal, penetration);
 					}
 				}
 
@@ -792,7 +808,7 @@ void main()
 					float penetration = 0;
 
 					if (AABBvsSphere(
-						bodies[i], readBodies[j],
+						bodies[i], j,
 						penetration, normal))
 					{
 						vec3 relativeVelocity = readBodies[j].velocity - bodies[i].velocity;
@@ -805,7 +821,7 @@ void main()
 						}
 						else
 						{
-							impulseResolution(bodies[i], readBodies[j], normal, velAlongNormal, penetration);
+							impulseResolution(bodies[i], j, normal, velAlongNormal, penetration);
 						}
 					}
 				}
@@ -819,7 +835,7 @@ void main()
 						float penetration = 0;
 
 						if (CylindervsCylinder(
-							bodies[i], readBodies[j],
+							bodies[i], j,
 							penetration, normal))
 						{
 							vec3 relativeVelocity = readBodies[j].velocity - bodies[i].velocity;
@@ -832,7 +848,7 @@ void main()
 							}
 							else
 							{
-								impulseResolution(bodies[i], readBodies[j], normal, velAlongNormal, penetration);
+								impulseResolution(bodies[i], j, normal, velAlongNormal, penetration);
 							}
 						}
 					}
@@ -842,7 +858,7 @@ void main()
 						float penetration = 0;
 
 						if (AABBvsCylinder(
-							bodies[i], readBodies[j],
+							bodies[i], j,
 							penetration, normal))
 						{
 							vec3 relativeVelocity = readBodies[j].velocity - bodies[i].velocity;
@@ -855,7 +871,7 @@ void main()
 							}
 							else
 							{
-								impulseResolution(bodies[i], readBodies[j], normal, velAlongNormal, penetration);
+								impulseResolution(bodies[i], j, normal, velAlongNormal, penetration);
 							}
 						}
 					}
@@ -865,7 +881,7 @@ void main()
 						float penetration = 0;
 
 						if (SpherevsCylinder(
-							bodies[i], readBodies[j],
+							bodies[i], j,
 							penetration, normal))
 						{
 							vec3 relativeVelocity = readBodies[j].velocity - bodies[i].velocity;
@@ -878,7 +894,7 @@ void main()
 							}
 							else
 							{
-								impulseResolution(bodies[i], readBodies[j], normal, velAlongNormal, penetration);
+								impulseResolution(bodies[i], j, normal, velAlongNormal, penetration);
 							}
 						}
 					}
