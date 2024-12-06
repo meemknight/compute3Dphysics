@@ -1,6 +1,6 @@
 #version 430 core
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 uniform int u_size;
 uniform float u_deltaTime;
@@ -727,7 +727,7 @@ vec3 boxDimensions = vec3(20, 20, 20);
 void main() 
 {
 
-	uint i = gl_WorkGroupID.x;
+	uint i = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
 	bodies[i] = readBodies[i];
 
 	//gravity

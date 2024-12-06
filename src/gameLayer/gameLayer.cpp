@@ -78,24 +78,33 @@ void bindDataToGPU()
 void readDataFromGPU()
 {
 
+	//if (currentShaderReadBuffer)return;
 
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[!currentShaderReadBuffer]);
 
 	// Ensure GPU writes are complete
 	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
 
-	void *mappedData = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
-	if (mappedData)
-	{
-		memcpy(simulator.bodies.data(), mappedData, simulator.bodies.size() * sizeof(simulator.bodies[0]));
 
-		// Read buffer data here
-		glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-	}
-	else
-	{
-		//Error reading data
-	}
+	gpuProfiler.startSubProfile("Read GPU data");
+	cpuProfiler.startSubProfile("Read GPU data");
+	glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, simulator.bodies.size() * sizeof(simulator.bodies[0]),
+		simulator.bodies.data());
+	cpuProfiler.endSubProfile("Read GPU data");
+	gpuProfiler.endSubProfile("Read GPU data");
+
+	//void *mappedData = glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_ONLY);
+	//if (mappedData)
+	//{
+	//	memcpy(simulator.bodies.data(), mappedData, simulator.bodies.size() * sizeof(simulator.bodies[0]));
+	//
+	//	// Read buffer data here
+	//	glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+	//}
+	//else
+	//{
+	//	//Error reading data
+	//}
 
 };
 
@@ -190,6 +199,8 @@ bool onGPU = 1;
 
 bool gameLogic(float deltaTime)
 {
+
+
 #pragma region init stuff
 	int w = 0; int h = 0;
 	w = platform::getFrameBufferSizeX(); //window w
@@ -218,7 +229,7 @@ bool gameLogic(float deltaTime)
 		glUniform1i(computeu_Size, simulator.bodies.size());
 		glUniform1f(computeu_deltaTime, deltaTime);
 
-		glDispatchCompute(simulator.bodies.size(), 1, 1);
+		glDispatchCompute((simulator.bodies.size()+63) / 64, 1, 1);
 
 	}
 	gpuProfiler.endSubProfile("compute work");
@@ -506,7 +517,6 @@ bool gameLogic(float deltaTime)
 	glDisable(GL_BLEND);
 
 		
-	cpuProfiler.startFrame();
 
 	if(!onGPU)
 	{
@@ -521,7 +531,6 @@ bool gameLogic(float deltaTime)
 		}
 	}
 
-	cpuProfiler.endFrame();
 
 	//compute stuff
 	if(onGPU)
@@ -530,6 +539,9 @@ bool gameLogic(float deltaTime)
 		currentShaderReadBuffer = !currentShaderReadBuffer;
 	}
 
+	cpuProfiler.endFrame();
+
+	cpuProfiler.startFrame();
 
 
 	return true;
