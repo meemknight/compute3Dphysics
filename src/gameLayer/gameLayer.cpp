@@ -58,6 +58,12 @@ auto getRandomNumber = [&](float min, float max)
 int currentShaderReadBuffer = 0;
 GLuint ssbo[2];
 
+
+GLuint spheresSSBO;
+GLuint cubesSSBO;
+GLuint cylindresSSBO;
+
+
 void uploadDataToGPU()
 {
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[currentShaderReadBuffer]);
@@ -73,6 +79,12 @@ void bindDataToGPU()
 {
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo[currentShaderReadBuffer]);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo[!currentShaderReadBuffer]);
+
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, spheresSSBO);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, cubesSSBO);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, cylindresSSBO);
+
+
 };
 
 void readDataFromGPU()
@@ -83,7 +95,7 @@ void readDataFromGPU()
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[!currentShaderReadBuffer]);
 
 	// Ensure GPU writes are complete
-	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_BUFFER_UPDATE_BARRIER_BIT);
+	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 
 	gpuProfiler.startSubProfile("Read GPU data");
@@ -114,6 +126,15 @@ bool initGame()
 	glGenBuffers(2, ssbo);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[0]);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[1]);
+
+
+	glGenBuffers(1, &spheresSSBO);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, spheresSSBO);
+	glGenBuffers(1, &cubesSSBO);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, cubesSSBO);
+	glGenBuffers(1, &cylindresSSBO);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, cylindresSSBO);
+
 
 	gpuProfiler.initGPUProfiler();
 	//float data[] =
@@ -311,6 +332,9 @@ bool gameLogic(float deltaTime)
 	cpuProfiler.displayPlot("CPU simulation");
 
 	gpuProfiler.displayPlot("GPU simulation");
+
+	int objectsCount = simulator.bodies.size();
+	ImGui::Text("Objects: %d", objectsCount);
 
 	if (ImGui::Button("Clear"))
 	{

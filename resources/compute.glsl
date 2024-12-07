@@ -36,16 +36,30 @@ struct Object
 	float padding5[3];   // ensure 16-byte alignment
 };
 
-readonly restrict layout(std430, binding = 0) coherent buffer u_readBodies
+readonly restrict layout(std430, binding = 0) buffer u_readBodies
 {
 	Object readBodies[];
 };
 
 //bodies is basically write bodies
-restrict layout(std430, binding = 1) coherent buffer u_writeBodies
+restrict layout(std430, binding = 1) buffer u_writeBodies
 {
 	Object bodies[];
 };
+
+
+restrict layout(std430, binding = 2) buffer u_spheres
+{ vec4 spheres[]; };
+
+restrict layout(std430, binding = 3) buffer u_cubes
+{ vec4 cubes[]; };
+
+restrict layout(std430, binding = 4) buffer u_cylindres
+{ vec4 cylindres[]; };
+
+
+
+
 
 vec3 getMin(inout Object b)
 {
@@ -741,6 +755,10 @@ void main()
 	{
 
 		if (i == j) { continue; }
+		//Object copy = bodies[i];
+		//bool reset = false;
+		//if (i == j) { reset = true; }
+
 
 		//auto &A = bodies[i];
 		//auto &B = readBodies[j];
@@ -749,7 +767,7 @@ void main()
 			readBodies[j].type == TYPE_CIRCLE
 			)
 		{
-			vec3 normal = vec3(0,0,0);
+			vec3 normal = vec3(0, 0, 0);
 			float penetration = 0;
 
 			if (CirclevsCircle(
@@ -804,7 +822,7 @@ void main()
 					)
 				{
 
-					vec3 normal = vec3(0,0,0);
+					vec3 normal = vec3(0, 0, 0);
 					float penetration = 0;
 
 					if (AABBvsSphere(
@@ -831,7 +849,7 @@ void main()
 						)
 					{
 
-						vec3 normal = vec3(0,0,0);
+						vec3 normal = vec3(0, 0, 0);
 						float penetration = 0;
 
 						if (CylindervsCylinder(
@@ -854,7 +872,7 @@ void main()
 					}
 					else if (bodies[i].type == TYPE_BOX && readBodies[j].type == TYPE_CILINDRU)
 					{
-						vec3 normal = vec3(0,0,0);
+						vec3 normal = vec3(0, 0, 0);
 						float penetration = 0;
 
 						if (AABBvsCylinder(
@@ -899,7 +917,7 @@ void main()
 						}
 					}
 
-
+		//if (reset){bodies[i] = copy;}
 
 	}
 	
