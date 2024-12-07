@@ -90,13 +90,13 @@ void uploadDataToGPU()
 		}
 
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, spheresSSBO);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, spheresSize * sizeof(glm::vec4), 0, GL_DYNAMIC_READ);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, spheresSize * sizeof(glm::vec4) * 2, 0, GL_DYNAMIC_READ);
 
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, cubesSSBO);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, cubesSize * sizeof(glm::vec4), 0, GL_DYNAMIC_READ);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, cubesSize * sizeof(glm::vec4) * 2, 0, GL_DYNAMIC_READ);
 
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, cylindresSSBO);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, cylindresSize * sizeof(glm::vec4), 0, GL_DYNAMIC_READ);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, cylindresSize * sizeof(glm::vec4) * 2, 0, GL_DYNAMIC_READ);
 
 	}
 
@@ -133,80 +133,97 @@ void bindDataToGPU()
 void readDataFromGPU()
 {
 
-	/*
-	//if (currentShaderReadBuffer)return;
-
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[!currentShaderReadBuffer]);
-
-	// Ensure GPU writes are complete
 	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-	gpuProfiler.startSubProfile("Read GPU data");
-	cpuProfiler.startSubProfile("Read GPU data");
-	glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, simulator.bodies.size() * sizeof(simulator.bodies[0]),
-		simulator.bodies.data());
-	cpuProfiler.endSubProfile("Read GPU data");
-	gpuProfiler.endSubProfile("Read GPU data");
-	*/
-
-	int spheresSize = 0;
-	int cubesSize = 0;
-	int cylindresSize = 0;
-
-	for (auto &o : simulator.bodies)
+	
+	if (0)
 	{
-		if (o.type == TYPE_CIRCLE)spheresSize++;
-		if (o.type == TYPE_BOX)cubesSize++;
-		if (o.type == TYPE_CILINDRU)cylindresSize++;
+
+
+		//if (currentShaderReadBuffer)return;
+
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo[!currentShaderReadBuffer]);
+
+		// Ensure GPU writes are complete
+		//glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+		gpuProfiler.startSubProfile("Read GPU data");
+		cpuProfiler.startSubProfile("Read GPU data");
+		glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, simulator.bodies.size() * sizeof(simulator.bodies[0]),
+			simulator.bodies.data());
+		cpuProfiler.endSubProfile("Read GPU data");
+		gpuProfiler.endSubProfile("Read GPU data");
 	}
-
-	std::vector<glm::vec4> spheresPositions;
-	spheresPositions.resize(spheresSize);
-
-	std::vector<glm::vec4> cubesPositions;
-	cubesPositions.resize(cubesSize);
-
-	std::vector<glm::vec4> cylindrePositions;
-	cylindrePositions.resize(cylindresSize);
-
-	if (spheresSize)
+	else
 	{
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, spheresSSBO);
-		glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, spheresSize * sizeof(glm::vec4),
-			spheresPositions.data());
-	}
 
-	if (cubesSize)
-	{
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, cubesSSBO);
-		glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, cubesSize * sizeof(glm::vec4),
-			cubesPositions.data());
-	}
+		int spheresSize = 0;
+		int cubesSize = 0;
+		int cylindresSize = 0;
 
-	if (cylindresSize)
-	{
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, cylindresSSBO);
-		glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, cylindresSize * sizeof(glm::vec4),
-			cylindrePositions.data());
-	}
-
-	int spheresCounter = 0;
-	int cubesCounter = 0;
-	int cylindresCounter = 0;
-
-	for (auto &o : simulator.bodies)
-	{
-		if (o.type == TYPE_CIRCLE)
+		for (auto &o : simulator.bodies)
 		{
-			o.position = spheresPositions[spheresCounter++];
-		}else
-		if (o.type == TYPE_BOX)
+			if (o.type == TYPE_CIRCLE)spheresSize++;
+			if (o.type == TYPE_BOX)cubesSize++;
+			if (o.type == TYPE_CILINDRU)cylindresSize++;
+		}
+
+		std::vector<glm::vec4> spheresPositions;
+		spheresPositions.resize(spheresSize * 2);
+
+		std::vector<glm::vec4> cubesPositions;
+		cubesPositions.resize(cubesSize * 2);
+
+		std::vector<glm::vec4> cylindrePositions;
+		cylindrePositions.resize(cylindresSize * 2);
+
+		if (spheresSize)
 		{
-			o.position = cubesPositions[cubesCounter++];
-		}else
-		if (o.type == TYPE_CILINDRU)
+			glBindBuffer(GL_SHADER_STORAGE_BUFFER, spheresSSBO);
+			glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, spheresSize * sizeof(glm::vec4) * 2,
+				spheresPositions.data());
+		}
+
+		if (cubesSize)
 		{
-			o.position = cylindrePositions[cylindresCounter++];
+			glBindBuffer(GL_SHADER_STORAGE_BUFFER, cubesSSBO);
+			glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, cubesSize * sizeof(glm::vec4) * 2,
+				cubesPositions.data());
+		}
+
+		if (cylindresSize)
+		{
+			glBindBuffer(GL_SHADER_STORAGE_BUFFER, cylindresSSBO);
+			glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, cylindresSize * sizeof(glm::vec4) * 2,
+				cylindrePositions.data());
+		}
+
+		int spheresCounter = 0;
+		int cubesCounter = 0;
+		int cylindresCounter = 0;
+
+		for (auto &o : simulator.bodies)
+		{
+			if (o.type == TYPE_CIRCLE)
+			{
+				o.position = spheresPositions[spheresCounter * 2];
+				o.shape = spheresPositions[spheresCounter * 2 + 1];
+				spheresCounter++;
+			}
+			else
+			if (o.type == TYPE_BOX)
+			{
+				o.position = cubesPositions[cubesCounter * 2];
+				o.shape = cubesPositions[cubesCounter * 2 + 1];
+				cubesCounter++;
+			}
+			else
+			if (o.type == TYPE_CILINDRU)
+			{
+				o.position = cylindrePositions[cylindresCounter * 2];
+				o.shape = cylindrePositions[cylindresCounter * 2 + 1];
+				cylindresCounter++;
+			}
 		}
 	}
 
@@ -228,9 +245,15 @@ bool initGame()
 	glGenBuffers(1, &cylindresSSBO);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, cylindresSSBO);
 
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
 
 	// Generate atomic counter buffers
 	glGenBuffers(3, counters);
+
+	std::cout << "spheresSSBO " << spheresSSBO << "\n";
+	std::cout << "cubesSSBO " << cubesSSBO << "\n";
+	std::cout << "cylindresSSBO " << cylindresSSBO << "\n";
 
 
 	gpuProfiler.initGPUProfiler();

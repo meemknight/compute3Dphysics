@@ -744,6 +744,8 @@ void main()
 {
 
 	uint i = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+	if (i >= u_size) { return; }
+
 	bodies[i] = readBodies[i];
 
 	//gravity
@@ -751,6 +753,7 @@ void main()
 
 	//drag
 	applyDrag(bodies[i]);
+
 
 	//colisions
 	for (int j = 0; j < u_size; j++)
@@ -980,7 +983,8 @@ void main()
 	{
 		uint newValue = atomicCounterIncrement(counterA);
 
-		spheres[newValue].xyz = bodies[i].position;
+		spheres[newValue * 2].xyz = bodies[i].position;
+		spheres[newValue * 2 + 1].xyz = bodies[i].shape;
 	}
 
 	//cubes
@@ -988,7 +992,8 @@ void main()
 	{
 		uint newValue = atomicCounterIncrement(counterB);
 
-		cubes[newValue].xyz = bodies[i].position;
+		cubes[newValue * 2].xyz = bodies[i].position;
+		cubes[newValue * 2 + 1].xyz = bodies[i].shape;
 	}
 
 	//cylindres
@@ -996,7 +1001,8 @@ void main()
 	{
 		uint newValue = atomicCounterIncrement(counterC);
 
-		cylindres[newValue].xyz = bodies[i].position;
+		cylindres[newValue * 2].xyz = bodies[i].position;
+		cylindres[newValue * 2 + 1].xyz = bodies[i].shape;
 	}
 
 
