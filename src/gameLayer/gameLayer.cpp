@@ -37,6 +37,12 @@ GLint positions;
 GLint size;
 
 
+Shader instancedShader;
+GLint instancedViewProj;
+GLint instancedColor;
+
+
+
 ImGui::FileBrowser fileBrowser;
 
 Model cubeModel;
@@ -65,6 +71,45 @@ GLuint cylindresSSBO;
 
 GLuint counters[3];
 
+GLuint sphereVAO = 0;
+GLuint cubeVAO = 0;
+GLuint cylinderVAO = 0;
+
+GLuint setupMeshVao(Mesh &mesh, GLint ssbo)
+{
+	GLuint vaoReturn = 0;
+
+	glGenVertexArrays(1, &vaoReturn);
+
+	glBindVertexArray(vaoReturn);
+
+
+	glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, 0, 6 * sizeof(float), 0);
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 3, GL_FLOAT, 0, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ibo);
+
+
+	glBindBuffer(GL_ARRAY_BUFFER, ssbo);
+	glEnableVertexAttribArray(2);
+	glVertexAttribPointer(2, 4, GL_FLOAT, 0, 8 * sizeof(float), 0);
+	glVertexAttribDivisor(2, 1);
+	glEnableVertexAttribArray(3);
+	glVertexAttribPointer(3, 4, GL_FLOAT, 0, 8 * sizeof(float), (void *)(4 * sizeof(float)));
+	glVertexAttribDivisor(3, 1);
+
+
+	glBindVertexArray(0);
+
+	return vaoReturn;
+}
+
+int spheresSize = 0;
+int cubesSize = 0;
+int cylindresSize = 0;
 
 void uploadDataToGPU()
 {
@@ -78,9 +123,9 @@ void uploadDataToGPU()
 
 	//determine sizes
 	{
-		int spheresSize = 0;
-		int cubesSize = 0;
-		int cylindresSize = 0;
+		spheresSize = 0;
+		cubesSize = 0;
+		cylindresSize = 0;
 
 		for (auto &o : simulator.bodies)
 		{
@@ -136,7 +181,7 @@ void readDataFromGPU()
 	glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 	
-	if (0)
+	if (1)
 	{
 
 
@@ -283,15 +328,28 @@ bool initGame()
 	positions = shader.getUniform("positions");
 	size = shader.getUniform("size");
 
+	
+
+	instancedShader.loadShaderProgramFromFile(
+		RESOURCES_PATH "instancedShader.vert",
+		RESOURCES_PATH "instancedShader.frag"
+	);
+	instancedViewProj = instancedShader.getUniform("viewProj");
+	instancedColor = instancedShader.getUniform("color");
+
+
+
 	camera.position.z = 2;
 
-	fileBrowser.SetTitle("test");
-	fileBrowser.SetTypeFilters({".gltf", ".fbx", ".pbj", ".glb"});
-	//fileBrowser.Open();
 
 	cubeModel.loadFromFile(RESOURCES_PATH "models/cube.obj");
 	ballModel.loadFromFile(RESOURCES_PATH "models/ball.obj");
 	cilindruModel.loadFromFile(RESOURCES_PATH "models/cilindru.obj");
+
+	cubeVAO = setupMeshVao(cubeModel.meshes[0].mesh, cubesSSBO);
+	sphereVAO = setupMeshVao(ballModel.meshes[0].mesh, spheresSSBO);
+	cylinderVAO = setupMeshVao(cilindruModel.meshes[0].mesh, cylindresSSBO);
+
 
 	//for (int i = 0; i < 500; i++)
 	//{
@@ -337,6 +395,7 @@ bool initGame()
 
 
 bool onGPU = 1;
+bool instancedVersion = 1;
 
 bool gameLogic(float deltaTime)
 {
@@ -356,6 +415,7 @@ bool gameLogic(float deltaTime)
 
 
 	camera.aspectRatio = (float)w / h;
+	if (w == 0 || h == 0) { camera.aspectRatio = 1; }
 
 #pragma endregion
 
@@ -439,12 +499,7 @@ bool gameLogic(float deltaTime)
 	//}
 
 
-	shader.bind();
-	glEnable(GL_CULL_FACE);
 
-
-	glUniformMatrix4fv(viewProj, 1,
-		0, glm::value_ptr(camera.getViewProjectionMatrix()));
 
 
 	ImGui::Begin("Editor");
@@ -544,6 +599,7 @@ bool gameLogic(float deltaTime)
 	ImGui::Checkbox("Speedup", &speedup);
 
 	ImGui::Checkbox("On GPU", &onGPU);
+	ImGui::Checkbox("Instanced Version", &instancedVersion);
 
 	for (int j = 0; j < count; j++)
 	{
@@ -578,63 +634,105 @@ bool gameLogic(float deltaTime)
 
 
 	ImGui::End();
+	glEnable(GL_CULL_FACE);
 
-
-	ImVec4 colorValue = {0,1,1,1};
-	glUniform4f(color, colorValue.x, colorValue.y, colorValue.z, 1);
-
-	for (auto &m : ballModel.meshes)
+	if(!instancedVersion)
 	{
-		glBindVertexArray(m.mesh.vao);
+		//normal rendering
 
-		for (auto &b : simulator.bodies)
+		shader.bind();
+		glUniformMatrix4fv(viewProj, 1,
+			0, glm::value_ptr(camera.getViewProjectionMatrix()));
+
+
+
+		ImVec4 colorValue = {0,1,1,1};
+		glUniform4f(color, colorValue.x, colorValue.y, colorValue.z, 1);
+
+		for (auto &m : ballModel.meshes)
 		{
-			if (b.type == TYPE_CIRCLE)
+			glBindVertexArray(m.mesh.vao);
+
+			for (auto &b : simulator.bodies)
 			{
-				glUniform3f(positions, b.position.x, b.position.y, b.position.z);
-				glUniform3f(size, b.shape.x * 2, b.shape.x * 2, b.shape.x * 2);
-				glDrawElements(GL_TRIANGLES, m.mesh.vertexCount, GL_UNSIGNED_SHORT, 0);
+				if (b.type == TYPE_CIRCLE)
+				{
+					glUniform3f(positions, b.position.x, b.position.y, b.position.z);
+					glUniform3f(size, b.shape.x * 2, b.shape.x * 2, b.shape.x * 2);
+					glDrawElements(GL_TRIANGLES, m.mesh.vertexCount, GL_UNSIGNED_SHORT, 0);
+				}
 			}
 		}
-	}
 
-	glUniform4f(color, 1, 1, 0.5, 1);
-	for (auto &m : cilindruModel.meshes)
-	{
-		glBindVertexArray(m.mesh.vao);
-
-		for (auto &b : simulator.bodies)
+		glUniform4f(color, 1, 1, 0.5, 1);
+		for (auto &m : cilindruModel.meshes)
 		{
-			if (b.type == TYPE_CILINDRU)
+			glBindVertexArray(m.mesh.vao);
+
+			for (auto &b : simulator.bodies)
 			{
-				glUniform3f(positions, b.position.x, b.position.y, b.position.z);
-				glUniform3f(size, b.shape.x*2, b.shape.y, b.shape.x * 2);
-				glDrawElements(GL_TRIANGLES, m.mesh.vertexCount, GL_UNSIGNED_SHORT, 0);
+				if (b.type == TYPE_CILINDRU)
+				{
+					glUniform3f(positions, b.position.x, b.position.y, b.position.z);
+					glUniform3f(size, b.shape.x * 2, b.shape.y, b.shape.x * 2);
+					glDrawElements(GL_TRIANGLES, m.mesh.vertexCount, GL_UNSIGNED_SHORT, 0);
+				}
 			}
 		}
-	}
 
-	glUniform4f(color, 1, 0.5, 1, 1);
+		glUniform4f(color, 1, 0.5, 1, 1);
+		for (auto &m : cubeModel.meshes)
+		{
+			glBindVertexArray(m.mesh.vao);
+
+			for (auto &b : simulator.bodies)
+			{
+				if (b.type == TYPE_BOX)
+				{
+					glUniform3f(positions, b.position.x, b.position.y, b.position.z);
+					glUniform3f(size, b.shape.x, b.shape.y, b.shape.z);
+					glDrawElements(GL_TRIANGLES, m.mesh.vertexCount, GL_UNSIGNED_SHORT, 0);
+				}
+			}
+		}
+
+
+	
+	}
+	else
+	{
+
+		instancedShader.bind();
+		glUniformMatrix4fv(instancedViewProj, 1,
+			0, glm::value_ptr(camera.getViewProjectionMatrix()));
+
+
+		ImVec4 colorValue = {0,1,1,1};
+		glUniform4f(instancedColor, colorValue.x, colorValue.y, colorValue.z, 1);
+		glBindVertexArray(sphereVAO);
+		glDrawElementsInstanced(GL_TRIANGLES, ballModel.meshes[0].mesh.vertexCount, GL_UNSIGNED_SHORT, 0, spheresSize);
+
+
+		glUniform4f(instancedColor, 1, 1, 0.5, 1);
+		glBindVertexArray(cylinderVAO);
+		glDrawElementsInstanced(GL_TRIANGLES, cilindruModel.meshes[0].mesh.vertexCount, GL_UNSIGNED_SHORT, 0, cylindresSize);
+
+		glUniform4f(instancedColor, 1, 0.5, 1, 1);
+		glBindVertexArray(cubeVAO);
+		glDrawElementsInstanced(GL_TRIANGLES, cubeModel.meshes[0].mesh.vertexCount, GL_UNSIGNED_SHORT, 0, cubesSize);
+		
+		glBindVertexArray(0);
+	}
+	
+	shader.bind();
+	glUniformMatrix4fv(viewProj, 1,
+		0, glm::value_ptr(camera.getViewProjectionMatrix()));
+
+	//draw floor
 	for (auto &m : cubeModel.meshes)
 	{
 		glBindVertexArray(m.mesh.vao);
-
-		for (auto &b : simulator.bodies)
-		{
-			if (b.type == TYPE_BOX)
-			{
-				glUniform3f(positions, b.position.x, b.position.y, b.position.z);
-				glUniform3f(size, b.shape.x, b.shape.y, b.shape.z);
-				glDrawElements(GL_TRIANGLES, m.mesh.vertexCount, GL_UNSIGNED_SHORT, 0);
-			}
-		}
-	}
-
-
-	for (auto &m : cubeModel.meshes)
-	{
-		glBindVertexArray(m.mesh.vao);
-		glUniform3f(positions, 0, -simulator.boxDimensions.y/2.f - 0.2 ,0);
+		glUniform3f(positions, 0, -simulator.boxDimensions.y / 2.f - 0.2, 0);
 		glUniform3f(size, simulator.boxDimensions.x, 0.2, simulator.boxDimensions.z);
 
 		glUniform4f(color, 0.5, 0.5, 0.5, 1);
@@ -679,7 +777,10 @@ bool gameLogic(float deltaTime)
 	//compute stuff
 	if(onGPU)
 	{
-		readDataFromGPU();
+		if (!instancedVersion)
+		{
+			readDataFromGPU();
+		}
 		currentShaderReadBuffer = !currentShaderReadBuffer;
 	}
 

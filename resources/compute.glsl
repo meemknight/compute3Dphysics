@@ -984,7 +984,7 @@ void main()
 		uint newValue = atomicCounterIncrement(counterA);
 
 		spheres[newValue * 2].xyz = bodies[i].position;
-		spheres[newValue * 2 + 1].xyz = bodies[i].shape;
+		spheres[newValue * 2 + 1].xyz = vec3(bodies[i].shape.x) * 2;
 	}
 
 	//cubes
@@ -1002,7 +1002,7 @@ void main()
 		uint newValue = atomicCounterIncrement(counterC);
 
 		cylindres[newValue * 2].xyz = bodies[i].position;
-		cylindres[newValue * 2 + 1].xyz = bodies[i].shape;
+		cylindres[newValue * 2 + 1].xyz = vec3(bodies[i].shape.x * 2, bodies[i].shape.y, bodies[i].shape.x * 2);
 	}
 
 
