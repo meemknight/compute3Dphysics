@@ -57,7 +57,9 @@ restrict layout(std430, binding = 3) buffer u_cubes
 restrict layout(std430, binding = 4) buffer u_cylindres
 { vec4 cylindres[]; };
 
-
+layout(binding = 5) uniform atomic_uint counterA;
+layout(binding = 6) uniform atomic_uint counterB;
+layout(binding = 7) uniform atomic_uint counterC;
 
 
 
@@ -972,5 +974,30 @@ void main()
 		bodies[i].position.z -= extra;
 		bodies[i].velocity.z *= -1;
 	}
+	
+	//spheres
+	if(bodies[i].type == 0)
+	{
+		uint newValue = atomicCounterIncrement(counterA);
+
+		spheres[newValue].xyz = bodies[i].position;
+	}
+
+	//cubes
+	if (bodies[i].type == 1)
+	{
+		uint newValue = atomicCounterIncrement(counterB);
+
+		cubes[newValue].xyz = bodies[i].position;
+	}
+
+	//cylindres
+	if (bodies[i].type == 2)
+	{
+		uint newValue = atomicCounterIncrement(counterC);
+
+		cylindres[newValue].xyz = bodies[i].position;
+	}
+
 
 }
