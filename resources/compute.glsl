@@ -974,7 +974,7 @@ void main()
 	if (maxPos.z > boxDimensions.z / 2)
 	{
 		float extra = maxPos.z - boxDimensions.z / 2;
-		bodies[i].position.z -= extra;
+		bodies[i].position.z -= extra; 
 		bodies[i].velocity.z *= -1;
 	}
 	

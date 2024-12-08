@@ -636,7 +636,7 @@ bool gameLogic(float deltaTime)
 	ImGui::End();
 	glEnable(GL_CULL_FACE);
 
-	if(!instancedVersion)
+	if(!instancedVersion || !onGPU)
 	{
 		//normal rendering
 
@@ -762,6 +762,8 @@ bool gameLogic(float deltaTime)
 
 	if(!onGPU)
 	{
+		cpuProfiler.startSubProfile("Only Simulation: ");
+
 		simulator.update(deltaTime, cpuProfiler);
 
 		if (speedup)
@@ -771,6 +773,9 @@ bool gameLogic(float deltaTime)
 				simulator.update(0.1, cpuProfiler);
 			}
 		}
+
+		cpuProfiler.endSubProfile("Only Simulation: ");
+
 	}
 
 
