@@ -701,6 +701,7 @@ bool gameLogic(float deltaTime)
 	}
 	else
 	{
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 		instancedShader.bind();
 		glUniformMatrix4fv(instancedViewProj, 1,
